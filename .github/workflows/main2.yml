@@ -1,0 +1,70 @@
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Gradle version
+        id: detect-gradle
+        run: |
+          WRAPPER_FILE="_source/gradle/wrapper/gradle-wrapper.properties"
+          if [ -f "$WRAPPER_FILE" ]; then
+            GRADLE_VERSION=$(grep -oP 'gradle-\K[0-9]+\.[0-9]+' "$WRAPPER_FILE" | head -1)
+            echo "gradle_version=$GRADLE_VERSION" >> $GITHUB_ENV
+            echo "Detected Gradle version: $GRADLE_VERSION"
+          else
+            echo "gradle_version=unknown" >> $GITHUB_ENV
+          fi
+
+      - name: Choose compatible Java version
+        run: |
+          if [[ "$gradle_version" == "unknown" ]]; then
+            echo "java_version=17" >> $GITHUB_ENV
+          elif (( $(echo "$gradle_version < 7.3" | bc -l) )); then
+            echo "java_version=11" >> $GITHUB_ENV
+          else
+            echo "java_version=17" >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: ${{ env.java_version }}
+          cache: 'gradle'
+
+      # 🧠 Smart fallback: use Gradle Action to install Gradle 8.x if wrapper is too old
+      - name: Setup Gradle (modern fallback)
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.7
+
+      - name: Grant execute permission for gradlew
+        working-directory: ./_source
+        run: chmod +x ./gradlew || true
+
+      - name: Build project
+        working-directory: ./_source
+        run: |
+          if [ -f "./gradlew" ]; then
+            ./gradlew clean build
+          else
+            gradle clean build
+          fi
+
+      - name: Build AAB
+        working-directory: ./_source
+        run: |
+          if [ -f "./gradlew" ]; then
+            ./gradlew app:bundleRelease
+          else
+            gradle app:bundleRelease
+          fi
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: AAB-Release
+          path: _source/app/build/outputs/bundle/release/
