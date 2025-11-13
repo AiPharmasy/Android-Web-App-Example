@@ -1,3 +1,15 @@
+name: Generated APK AAB (Upload - Create Artifact To Github Action)
+
+env:
+  main_project_module: app
+  playstore_name: Frogobox ID
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -5,6 +17,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 🕓 Set current date
+      - name: Set current date
+        run: echo "date_today=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      # 🧩 Set repo name
+      - name: Set repository name
+        run: echo "repository_name=$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')" >> $GITHUB_ENV
+
+      # 🔍 Detect Gradle version from wrapper
       - name: Detect Gradle version
         id: detect-gradle
         run: |
@@ -17,6 +38,7 @@ jobs:
             echo "gradle_version=unknown" >> $GITHUB_ENV
           fi
 
+      # ☕ Choose Java version based on Gradle compatibility
       - name: Choose compatible Java version
         run: |
           if [[ "$gradle_version" == "unknown" ]]; then
@@ -28,23 +50,26 @@ jobs:
           fi
         shell: bash
 
-      - name: Set up Java
+      # 🧰 Set up Java
+      - name: Set up Java ${{ env.java_version }}
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: ${{ env.java_version }}
           cache: 'gradle'
 
-      # 🧠 Smart fallback: use Gradle Action to install Gradle 8.x if wrapper is too old
-      - name: Setup Gradle (modern fallback)
+      # ⚙️ Set up Gradle fallback (for outdated wrappers)
+      - name: Setup Gradle fallback
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: 8.7
 
-      - name: Grant execute permission for gradlew
+      # 🔐 Allow gradlew execution
+      - name: Grant execute permission
         working-directory: ./_source
         run: chmod +x ./gradlew || true
 
+      # 🧪 Run build
       - name: Build project
         working-directory: ./_source
         run: |
@@ -54,17 +79,19 @@ jobs:
             gradle clean build
           fi
 
+      # 📦 Build app bundle
       - name: Build AAB
         working-directory: ./_source
         run: |
           if [ -f "./gradlew" ]; then
-            ./gradlew app:bundleRelease
+            ./gradlew ${{ env.main_project_module }}:bundleRelease
           else
-            gradle app:bundleRelease
+            gradle ${{ env.main_project_module }}:bundleRelease
           fi
 
-      - name: Upload AAB
+      # ⬆️ Upload artifact
+      - name: Upload AAB (App Bundle) Release
         uses: actions/upload-artifact@v4
         with:
-          name: AAB-Release
-          path: _source/app/build/outputs/bundle/release/
+          name: ${{ env.date_today }} - ${{ env.playstore_name }} - ${{ env.repository_name }} - AAB Release
+          path: _source/${{ env.main_project_module }}/build/outputs/bundle/release/
